@@ -17,6 +17,7 @@ const FaceTracker = () => {
   const [isCountingDown, setIsCountingDown] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
 
   const loadModels = async () => {
     const MODEL_URL = "/models";
@@ -26,6 +27,16 @@ const FaceTracker = () => {
       faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
     ]);
   };
+
+  useEffect(() => {
+    const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(
+      navigator.userAgent
+    );
+    setIsMobile(isMobileDevice);
+    if (isMobileDevice) {
+      console.log("📱 Running on mobile device");
+    }
+  }, []);
 
   useEffect(() => {
     const setup = async () => {
@@ -55,7 +66,7 @@ const FaceTracker = () => {
               height: canvas.height,
             });
 
-            const ctx = canvas.getContext("2d");
+            const ctx = canvas.getContext("2d", { willReadFrequently: true });
             if (ctx) {
               ctx.clearRect(0, 0, canvas.width, canvas.height);
               faceapi.draw.drawDetections(canvas, resized);
@@ -83,6 +94,7 @@ const FaceTracker = () => {
   }, []);
 
   const startCountdown = () => {
+    console.log("🎬 Start Countdown Triggered");
     setIsCountingDown(true);
     setCountdown(3);
 
@@ -101,31 +113,49 @@ const FaceTracker = () => {
   };
 
   const startRecording = async () => {
+    console.log("🎥 Starting recording");
+    if (typeof MediaRecorder === "undefined") {
+      alert("MediaRecorder is not supported on this browser/device.");
+      return;
+    }
+
     if (!outputCanvasRef.current || !videoRef.current) return;
 
-    // 🔐 Force video to play (especially on mobile)
     try {
-      await videoRef.current.play();
+      await videoRef.current.play(); // Required on mobile
     } catch (err) {
-      console.warn("Unable to force play video:", err);
+      console.warn("Video play failed on mobile:", err);
     }
 
     const stream = outputCanvasRef.current.captureStream();
-    const recorder = new MediaRecorder(stream);
-    const chunks: Blob[] = [];
+    if (!stream) {
+      alert("Unable to capture stream from canvas.");
+      return;
+    }
 
-    recorder.ondataavailable = (e) => chunks.push(e.data);
-    recorder.onstop = () =>
-      setRecordedBlob(new Blob(chunks, { type: "video/webm" }));
+    try {
+      const recorder = new MediaRecorder(stream, {
+        mimeType: "video/webm;codecs=vp8",
+      });
 
-    recorder.start();
-    mediaRecorderRef.current = recorder;
-    setIsRecording(true);
-    setRecordingTime(0);
+      const chunks: Blob[] = [];
 
-    recordingTimerRef.current = setInterval(() => {
-      setRecordingTime((prev) => prev + 1);
-    }, 1000);
+      recorder.ondataavailable = (e) => chunks.push(e.data);
+      recorder.onstop = () =>
+        setRecordedBlob(new Blob(chunks, { type: "video/webm" }));
+
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setIsRecording(true);
+      setRecordingTime(0);
+
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingTime((prev) => prev + 1);
+      }, 1000);
+    } catch (err) {
+      console.error("MediaRecorder failed:", err);
+      alert("Recording not supported on this device.");
+    }
   };
 
   const stopRecording = () => {
@@ -150,6 +180,7 @@ const FaceTracker = () => {
             muted
             playsInline
             className="rounded-xl border-4 border-pink-500 shadow-lg w-full"
+            style={{ WebkitTransform: "scale(1)", transform: "scale(1)" }}
           />
           <canvas
             ref={overlayCanvasRef}
@@ -173,6 +204,7 @@ const FaceTracker = () => {
         {!isRecording ? (
           <Button
             onClick={startCountdown}
+            onTouchStart={startCountdown} // 👈 Fix for mobile
             disabled={isCountingDown}
             className="bg-green-600 hover:bg-green-700 text-white"
           >
@@ -183,6 +215,7 @@ const FaceTracker = () => {
         ) : (
           <Button
             onClick={stopRecording}
+            onTouchStart={stopRecording} // 👈 Fix for mobile
             className="bg-red-600 hover:bg-red-700 text-white"
           >
             Stop Recording

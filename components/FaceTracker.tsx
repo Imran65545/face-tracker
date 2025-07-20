@@ -17,6 +17,7 @@ const FaceTracker = () => {
   const [isCountingDown, setIsCountingDown] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const recordingTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   const [isMobile, setIsMobile] = useState(false);
 
   const loadModels = async () => {
@@ -29,13 +30,9 @@ const FaceTracker = () => {
   };
 
   useEffect(() => {
-    const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(
-      navigator.userAgent
-    );
-    setIsMobile(isMobileDevice);
-    if (isMobileDevice) {
-      console.log("📱 Running on mobile device");
-    }
+    const mobileCheck = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    setIsMobile(mobileCheck);
+    console.log("Running on", mobileCheck ? "mobile device" : "desktop");
   }, []);
 
   useEffect(() => {
@@ -66,7 +63,7 @@ const FaceTracker = () => {
               height: canvas.height,
             });
 
-            const ctx = canvas.getContext("2d", { willReadFrequently: true });
+            const ctx = canvas.getContext("2d");
             if (ctx) {
               ctx.clearRect(0, 0, canvas.width, canvas.height);
               faceapi.draw.drawDetections(canvas, resized);
@@ -94,7 +91,11 @@ const FaceTracker = () => {
   }, []);
 
   const startCountdown = () => {
-    console.log("🎬 Start Countdown Triggered");
+    if (!outputCanvasRef.current?.captureStream) {
+      alert("Canvas captureStream() not supported on this device.");
+      return;
+    }
+
     setIsCountingDown(true);
     setCountdown(3);
 
@@ -113,28 +114,20 @@ const FaceTracker = () => {
   };
 
   const startRecording = async () => {
-    console.log("🎥 Starting recording");
-    if (typeof MediaRecorder === "undefined") {
-      alert("MediaRecorder is not supported on this browser/device.");
-      return;
-    }
-
-    if (!outputCanvasRef.current || !videoRef.current) return;
-
     try {
-      await videoRef.current.play(); // Required on mobile
-    } catch (err) {
-      console.warn("Video play failed on mobile:", err);
+      await videoRef.current?.play(); // Needed for mobile
+    } catch (e) {
+      console.warn("Autoplay failed", e);
     }
 
-    const stream = outputCanvasRef.current.captureStream();
-    if (!stream) {
-      alert("Unable to capture stream from canvas.");
+    const canvasStream = outputCanvasRef.current?.captureStream();
+    if (!canvasStream) {
+      alert("Recording not supported on this device.");
       return;
     }
 
     try {
-      const recorder = new MediaRecorder(stream, {
+      const recorder = new MediaRecorder(canvasStream, {
         mimeType: "video/webm;codecs=vp8",
       });
 
@@ -153,7 +146,7 @@ const FaceTracker = () => {
         setRecordingTime((prev) => prev + 1);
       }, 1000);
     } catch (err) {
-      console.error("MediaRecorder failed:", err);
+      console.error("Recording failed", err);
       alert("Recording not supported on this device.");
     }
   };
@@ -161,9 +154,7 @@ const FaceTracker = () => {
   const stopRecording = () => {
     mediaRecorderRef.current?.stop();
     setIsRecording(false);
-    if (recordingTimerRef.current) {
-      clearInterval(recordingTimerRef.current);
-    }
+    if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
   };
 
   const deleteRecording = () => {
@@ -180,7 +171,6 @@ const FaceTracker = () => {
             muted
             playsInline
             className="rounded-xl border-4 border-pink-500 shadow-lg w-full"
-            style={{ WebkitTransform: "scale(1)", transform: "scale(1)" }}
           />
           <canvas
             ref={overlayCanvasRef}
@@ -200,26 +190,32 @@ const FaceTracker = () => {
         </div>
       )}
 
-      <div className="flex gap-4">
-        {!isRecording ? (
-          <Button
-            onClick={startCountdown}
-            onTouchStart={startCountdown} // 👈 Fix for mobile
-            disabled={isCountingDown}
-            className="bg-green-600 hover:bg-green-700 text-white"
-          >
-            {isCountingDown
-              ? `Starting in ${countdown}s...`
-              : "Start Recording"}
-          </Button>
-        ) : (
-          <Button
-            onClick={stopRecording}
-            onTouchStart={stopRecording} // 👈 Fix for mobile
-            className="bg-red-600 hover:bg-red-700 text-white"
-          >
-            Stop Recording
-          </Button>
+      <div className="flex flex-col items-center gap-2">
+        <div className="flex gap-4">
+          {!isRecording ? (
+            <button
+              onClick={startCountdown}
+              {...(isMobile ? { onTouchStart: startCountdown } : {})}
+              disabled={isCountingDown || isMobile}
+              className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl text-lg touch-manipulation"
+            >
+              {isCountingDown
+                ? `Starting in ${countdown}s...`
+                : "Start Recording"}
+            </button>
+          ) : (
+            <button
+              onClick={stopRecording}
+              className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl text-lg"
+            >
+              Stop Recording
+            </button>
+          )}
+        </div>
+        {isMobile && (
+          <div className="text-sm text-yellow-500 mt-2 text-center max-w-xs">
+            Video recording is not supported on most mobile browsers. Please use a desktop browser for this feature.
+          </div>
         )}
       </div>
 
